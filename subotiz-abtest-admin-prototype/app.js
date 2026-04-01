@@ -82,32 +82,44 @@ function formatNowStamp() {
   return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0') + ' ' + String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0') + ':' + String(now.getSeconds()).padStart(2, '0');
 }
 
-const getExperimentDetail = (id) => ({
-  ...experiments.find(e => e.id === id),
-  goal: '提升定价页下单转化率',
-  targetType: '定价',
-  targetId: 'price_xxx',
-  targetName: '专业版定价',
-  endUserStop: 10000,
-  endRunDays: 30,
-  userScope: '定向',
-  userScopeRules: [
-    { dimension: '国家', value: '美国、英国' },
-    { dimension: '来源渠道', value: 'organic' }
-  ],
-  groups: [
-    { id: 'control', name: '对照组', traffic: 34 },
-    { id: 'var-a', name: '实验组 A', traffic: 33 },
-    { id: 'var-b', name: '实验组 B', traffic: 33 }
-  ],
-  userAssignments: (() => {
+function buildDetailGroupsForExperiment(exp) {
+  const base = [
+    { name: '对照组', traffic: 34, isControl: true },
+    { name: '实验组 A', traffic: 33 },
+    { name: '实验组 B', traffic: 33 }
+  ];
+  if (!exp) {
+    return base.map(g => ({ ...g, variable: '', meaning: '' }));
+  }
+  if (exp.target === '定价') {
+    return base.map((g, i) => ({
+      ...g,
+      variable: i === 0 ? 'price_xxx' : i === 1 ? 'price_yyy' : 'price_xxx',
+      meaning: ''
+    }));
+  }
+  if (exp.target === '价格表') {
+    return base.map(g => ({ ...g, variable: '/pricing/monthly', meaning: '' }));
+  }
+  return base.map((g, i) => ({ ...g, variable: `value${i + 1}`, meaning: '' }));
+}
+
+function getFormTargetTypeKey(exp) {
+  if (!exp) return '';
+  if (exp.target === '定价') return 'pricing';
+  if (exp.target === '价格表') return 'price_table';
+  return 'custom';
+}
+
+const getExperimentDetail = (id) => {
+  const userAssignments = (() => {
     const groups = ['对照组', '实验组 A', '实验组 B'];
     const list = [];
     for (let i = 1; i <= 25; i++) {
       const n = String(i).padStart(3, '0');
       list.push({
         uid: 'usr_' + n,
-        vid: 'vid_' + ['abc', 'def', 'ghi', 'jkl', 'mno'][(i - 1) % 5] + n,
+        clientId: 'cid_' + ['abc', 'def', 'ghi', 'jkl', 'mno'][(i - 1) % 5] + n,
         merchantCustomerId: 'mc_' + n + '_' + (1000 + i),
         ip: '203.0.113.' + String((i % 200) + 1),
         group: groups[(i - 1) % 3],
@@ -115,8 +127,44 @@ const getExperimentDetail = (id) => ({
       });
     }
     return list;
-  })()
-});
+  })();
+  const exp = experiments.find(e => e.id === id);
+  const commonRules = [
+    { dimension: '国家', value: '美国、英国' },
+    { dimension: '来源渠道', value: 'organic' }
+  ];
+  if (!exp) {
+    return {
+      goal: '提升定价页下单转化率',
+      targetType: '定价',
+      targetName: '专业版定价',
+      targetId: 'price_xxx',
+      endUserStop: 10000,
+      endRunDays: 30,
+      userScope: '定向',
+      userScopeRules: commonRules,
+      groups: buildDetailGroupsForExperiment(null),
+      userAssignments
+    };
+  }
+  const ttLabel = exp.target === '定价' ? '定价' : exp.target === '价格表' ? '价格表' : '自定义';
+  const nameMatch = exp.targetLabel.match(/^([^(]+)/);
+  const targetName = nameMatch ? nameMatch[1].trim() : exp.targetLabel;
+  const idMatch = exp.targetLabel.match(/\(([^)]+)\)/);
+  return {
+    ...exp,
+    goal: exp.goal || '提升定价页下单转化率',
+    targetType: ttLabel,
+    targetName,
+    targetId: idMatch ? idMatch[1] : '',
+    endUserStop: exp.endUserStop != null ? exp.endUserStop : 10000,
+    endRunDays: exp.endRunDays != null ? exp.endRunDays : 30,
+    userScope: exp.userScopeSaved || '定向',
+    userScopeRules: exp.userScopeRulesSaved || commonRules,
+    groups: (exp.savedGroups && exp.savedGroups.length) ? exp.savedGroups : buildDetailGroupsForExperiment(exp),
+    userAssignments
+  };
+};
 
 // 实验数据（数据 Tab 用）- 5 层转化漏斗，转化率由数据列计算
 const conversionFormulas = [
@@ -236,6 +284,39 @@ function buildPriceTableOptionsHtml() {
   );
 }
 
+function buildPricingSelectHtmlSelected(selectedValue) {
+  const opts = [
+    { v: '', t: '请选择定价' },
+    { v: 'price_xxx', t: '专业版定价 (price_xxx)' },
+    { v: 'price_yyy', t: '年度套餐 (price_yyy)' }
+  ];
+  return opts.map(o => `<option value="${escapeHtmlAttr(o.v)}"${o.v === selectedValue ? ' selected' : ''}>${o.t}</option>`).join('');
+}
+
+function buildPriceTableSelectHtmlSelected(selectedValue) {
+  const tip = `该选项已在实验「${PRICE_TABLE_DISABLED_OPTION_DEMO.takenByExperimentName}」内`;
+  let html = '<option value="">请选择价格表</option>';
+  mockPriceTables.forEach(pt => {
+    html += `<option value="${escapeHtmlAttr(pt.id)}"${pt.id === selectedValue ? ' selected' : ''}>${pt.name} (${pt.desc})</option>`;
+  });
+  html += `<option value="${escapeHtmlAttr(PRICE_TABLE_DISABLED_OPTION_DEMO.value)}" disabled title="${escapeHtmlAttr(tip)}">${PRICE_TABLE_DISABLED_OPTION_DEMO.label}</option>`;
+  return html;
+}
+
+function buildEditTargetCellHtml(tKey, value, disabled) {
+  const d = disabled ? ' disabled' : '';
+  if (tKey === 'custom') {
+    return `<input type="text" class="target-custom-input" value="${escapeHtmlAttr(value)}"${d} />`;
+  }
+  if (tKey === 'pricing') {
+    return `<select class="target-select"${d}>${buildPricingSelectHtmlSelected(value)}</select>`;
+  }
+  if (tKey === 'price_table') {
+    return `<select class="target-select"${d}>${buildPriceTableSelectHtmlSelected(value)}</select>`;
+  }
+  return `<select class="target-select"${d}><option value="">请先选择实验对象</option></select>`;
+}
+
 // 路由
 function getRoute() {
   const hash = (location.hash || '#/experiments').slice(1);
@@ -277,6 +358,20 @@ function render() {
     if (headerLeft) headerLeft.innerHTML = '<button type="button" class="btn btn-ghost btn-sm back-btn" id="createPageBackBtn">← 返回</button>';
     bindCreateFormEvents();
     document.getElementById('pageTitle').textContent = '创建实验';
+    return;
+  }
+
+  if (path === 'experiments' && id && sub === 'edit') {
+    const exp = experiments.find(e => e.id === id);
+    if (!exp || exp.status === 'ended') {
+      location.hash = '#/experiments/' + id;
+      return;
+    }
+    currentExperimentId = id;
+    view.innerHTML = renderEditExperiment(id);
+    if (headerLeft) headerLeft.innerHTML = '<button type="button" class="btn btn-ghost btn-sm back-btn" id="editPageBackBtn">← 返回</button>';
+    bindEditFormEvents(id);
+    document.getElementById('pageTitle').textContent = '编辑实验';
     return;
   }
 
@@ -590,7 +685,7 @@ function renderCreateExperiment() {
               <option value="price_table">价格表</option>
               <option value="custom">自定义</option>
             </select>
-            <p class="form-hint" id="customTargetHintWrap" style="display:none; margin-top:12px;">前端在实验节点调用 SDK 方法使用实验ID获取用户实验分组数据，商户根据返回值做不同实验策略处理。<a href="#/docs/custom-abtest-config" target="_blank" rel="noopener" class="link-btn">了解详情</a></p>
+            <p class="form-hint" id="customTargetHintWrap" style="display:none; margin-top:12px;">自定义实验支持商户自行定义实验对象与业务逻辑。A/B 测试系统仅负责为参与实验的用户分配分组并返回分组结果，不同分组对应的执行逻辑由商户自行处理。<a href="#/docs/custom-abtest-config" target="_blank" rel="noopener" class="link-btn">了解详情</a></p>
           </div>
           <div class="form-group">
             <label class="form-label">实验结束配置</label>
@@ -678,7 +773,334 @@ function renderCreateExperiment() {
   `;
 }
 
+function escTextareaContent(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function renderEditExperiment(id) {
+  const detail = getExperimentDetail(id);
+  const exp = experiments.find(e => e.id === id);
+  const restricted = Boolean(exp && (exp.status === 'active' || exp.status === 'paused'));
+  const tKey = getFormTargetTypeKey(exp);
+  const ttSelectVal = tKey;
+  const endOpen = Boolean(exp && exp.endRunDays != null && Number(exp.endRunDays) > 0);
+  const userScopeVal = detail.userScope === '全部' ? 'all' : 'targeted';
+  const scopeVisible = userScopeVal === 'targeted';
+  const trafficSum = (detail.groups || []).reduce((s, g) => s + (Number(g.traffic) || 0), 0);
+
+  const rowsHtml = (detail.groups || []).map((g, idx) => {
+    const isControl = g.isControl || idx === 0;
+    const targetCell = buildEditTargetCellHtml(tKey, g.variable, restricted);
+    const delCell = restricted
+      ? `<span class="traffic-row-action"><button type="button" class="btn btn-ghost btn-sm btn-remove-group" disabled title="当前状态不可删除分组">${TRASH_ICON_SVG}</button></span>`
+      : `<span class="traffic-row-action">${!isControl ? `<button type="button" class="btn btn-ghost btn-sm btn-remove-group" title="删除该实验组" aria-label="删除该实验组">${TRASH_ICON_SVG}</button>` : ''}</span>`;
+    return `
+      <div class="traffic-row" ${isControl ? 'data-is-control="true"' : ''}>
+        <input type="text" placeholder="实验分组名称" value="${escapeHtmlAttr(g.name)}" />
+        <div class="target-cell">${targetCell}</div>
+        <div class="target-meaning-cell"><input type="text" class="meaning-input" placeholder="记录该分组的业务逻辑（选填）" value="${escapeHtmlAttr(g.meaning || '')}" /></div>
+        <input type="number" min="0" max="100" value="${g.traffic}" placeholder="流量%" />
+        ${delCell}
+      </div>
+    `;
+  }).join('');
+
+  const ttDisabled = restricted ? ' disabled' : '';
+  const usDisabled = restricted ? ' disabled' : '';
+  const addGroupBtn = restricted
+    ? `<button type="button" class="btn btn-ghost btn-sm add-group-btn" id="addGroup" disabled title="当前状态不可添加实验组">+ 添加实验组</button>`
+    : `<button type="button" class="btn btn-ghost btn-sm add-group-btn" id="addGroup">+ 添加实验组</button>`;
+
+  const scopeTagsReadonly = restricted && scopeVisible
+    ? (detail.userScopeRules || []).map(r => `<span class="scope-tag">${r.dimension}: ${r.value}</span>`).join('')
+    : '';
+  const scopeTagsDraft = !restricted && scopeVisible
+    ? (detail.userScopeRules || []).map((r, i) => `<span class="scope-tag">${r.dimension}: ${r.value} <span class="remove" data-i="${i}">×</span></span>`).join('')
+    : '';
+
+  const scopeRulesBlock = restricted
+    ? `<div id="scopeRules" style="margin-top:12px; display:${scopeVisible ? 'block' : 'none'};">
+         <div class="scope-tags" id="scopeTags">${scopeTagsReadonly}</div>
+       </div>`
+    : `<div id="scopeRules" style="margin-top:12px; display:${scopeVisible ? 'block' : 'none'};">
+         <div class="scope-tags" id="scopeTags">${scopeTagsDraft}</div>
+         <div class="add-scope-row">
+           <select id="scopeDim"><option value="国家">国家</option><option value="来源渠道">来源渠道</option><option value="设备">设备</option></select>
+           <input type="text" id="scopeValue" placeholder="如：美国、英国" />
+           <button type="button" class="btn btn-secondary btn-sm" id="addScope">添加</button>
+         </div>
+       </div>`;
+
+  return `
+    <div class="card">
+      <div class="card-header">编辑实验</div>
+      <div class="card-body">
+        <form id="editExperimentForm" data-edit-id="${escapeHtmlAttr(id)}" data-restricted="${restricted ? '1' : '0'}">
+          <div class="form-group">
+            <label class="form-label">实验名称 <span style="color:var(--danger);">*</span></label>
+            <input type="text" name="name" value="${escapeHtmlAttr(detail.name)}" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">实验对象</label>
+            <select name="targetType" id="targetType"${ttDisabled}${restricted ? ' class="is-readonly-select"' : ''}>
+              <option value="">请选择</option>
+              <option value="pricing"${ttSelectVal === 'pricing' ? ' selected' : ''}>定价</option>
+              <option value="price_table"${ttSelectVal === 'price_table' ? ' selected' : ''}>价格表</option>
+              <option value="custom"${ttSelectVal === 'custom' ? ' selected' : ''}>自定义</option>
+            </select>
+            <p class="form-hint" id="customTargetHintWrap" style="display:${ttSelectVal === 'custom' ? 'block' : 'none'}; margin-top:12px;">自定义实验支持商户自行定义实验对象与业务逻辑。A/B 测试系统仅负责为参与实验的用户分配分组并返回分组结果，不同分组对应的执行逻辑由商户自行处理。<a href="#/docs/custom-abtest-config" target="_blank" rel="noopener" class="link-btn">了解详情</a></p>
+            ${restricted ? '<p class="form-hint">运行中或已暂停时不可修改实验对象。</p>' : ''}
+          </div>
+          <div class="form-group">
+            <label class="form-label">实验结束配置</label>
+            <p class="form-hint">实验优先按照达到测试用户数自动结束，可选设置达到运行时长也自动结束（实验用户越多结果越准确）</p>
+            <div class="end-config-line">
+              <span class="end-config-label">实验达到</span>
+              <input type="number" name="endUserCount" id="endUserCount" class="end-config-input" min="501" max="10000000" step="1" value="${detail.endUserStop != null ? detail.endUserStop : getDefaultEndUserCount(MOCK_SHOP_DAILY_AVG_LAST_30)}" />
+              <span class="end-config-suffix">用户数后自动停止</span>
+            </div>
+            <button type="button" class="end-config-add-trigger" id="addMaxRunDurationBtn"${endOpen ? ' hidden' : ''}>添加实验最大运行时长</button>
+            <div id="endRunDaysWrap" class="end-config-line end-config-run-wrap${endOpen ? ' is-open' : ''}" aria-hidden="${endOpen ? 'false' : 'true'}">
+              <span class="end-config-label">实验运行</span>
+              <input type="number" name="endRunDays" id="endRunDays" class="end-config-input" min="1" max="365" step="1" value="${exp && exp.endRunDays != null ? exp.endRunDays : 30}" />
+              <span class="end-config-suffix">天后自动结束</span>
+              <button type="button" class="end-config-remove" id="removeMaxRunDurationBtn" title="移除运行时长限制">移除</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">实验用户范围</label>
+            <select name="userScope" id="userScope"${usDisabled}${restricted ? ' class="is-readonly-select"' : ''}>
+              <option value="all"${userScopeVal === 'all' ? ' selected' : ''}>全部用户</option>
+              <option value="targeted"${userScopeVal === 'targeted' ? ' selected' : ''}>定向范围</option>
+            </select>
+            ${scopeRulesBlock}
+          </div>
+          <div class="form-group traffic-module" id="trafficModuleWrap">
+            <label class="form-label">实验分组与流量</label>
+            <p class="form-hint">对照组不可删除；至少保留一个实验组，实验组多于一个时可删除多余组，总流量需为 100%。${restricted ? '（运行中/已暂停：不可添加或删除分组，不可修改分组变量）' : ''}</p>
+            <div class="traffic-table-header">
+              <span class="th-name">实验分组名称</span>
+              <span class="th-target">分组变量</span>
+              <span class="th-meaning">分组说明</span>
+              <span class="th-traffic">流量 %</span>
+              <span class="th-action"></span>
+            </div>
+            <div id="trafficGroups">${rowsHtml}</div>
+            <p class="control-group-hint" id="controlGroupHint" style="display:${(tKey === 'pricing' || tKey === 'price_table') ? 'block' : 'none'};">商户站点前端集成的价格或价格表需要与对照组保持一致</p>
+            <p class="traffic-total">总流量：<span id="trafficTotal">${trafficSum}</span>%</p>
+            ${addGroupBtn}
+          </div>
+          <div class="form-group">
+            <label class="form-label">实验目标与方案描述</label>
+            <textarea name="goal" placeholder="填写您做测试的目的，并且说明下对照组和每个实验组的不同逻辑 ，选填；" rows="3"${restricted ? ' readonly class="is-readonly-textarea"' : ''}>${escTextareaContent(detail.goal || '')}</textarea>
+            ${restricted ? '<p class="form-hint">运行中或已暂停时不可修改实验目标与方案描述。</p>' : ''}
+          </div>
+          <div class="action-bar" style="margin-top:24px;">
+            <button type="submit" class="btn btn-primary">保存</button>
+            <a href="#/experiments/${escapeHtmlAttr(id)}" class="btn btn-secondary">取消</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+}
+
 const PRICING_OPTIONS = '<option value="">请选择定价</option><option value="price_xxx">专业版定价 (price_xxx)</option><option value="price_yyy">年度套餐 (price_yyy)</option>';
+const EDIT_ERROR_MSG_ID = 'editFormFirstErrorMsg';
+
+function clearEditFormErrors() {
+  const form = document.getElementById('editExperimentForm');
+  if (!form) return;
+  form.querySelectorAll('.' + CREATE_FIELD_ERROR).forEach(el => el.classList.remove(CREATE_FIELD_ERROR));
+  document.getElementById(EDIT_ERROR_MSG_ID)?.remove();
+}
+
+function placeFirstEditFormErrorMessage(firstEl) {
+  document.getElementById(EDIT_ERROR_MSG_ID)?.remove();
+  const p = document.createElement('p');
+  p.id = EDIT_ERROR_MSG_ID;
+  p.className = 'form-hint create-form-field-error-msg';
+  p.textContent = '请完成此项配置';
+  const trafficRow = firstEl.closest('.traffic-row');
+  const endLine = firstEl.closest('.end-config-line');
+  if (trafficRow) trafficRow.insertAdjacentElement('afterend', p);
+  else if (endLine) endLine.insertAdjacentElement('afterend', p);
+  else firstEl.insertAdjacentElement('afterend', p);
+}
+
+function validateEditForm(restricted) {
+  clearEditFormErrors();
+  const errorEls = [];
+  const q = (sel) => document.querySelector(`#editExperimentForm ${sel}`);
+
+  const nameInput = q('[name="name"]');
+  if (!nameInput || !String(nameInput.value || '').trim()) {
+    if (nameInput) errorEls.push(nameInput);
+  }
+
+  if (!restricted) {
+    const targetTypeEl = document.getElementById('targetType');
+    if (!targetTypeEl || !targetTypeEl.value) {
+      if (targetTypeEl) errorEls.push(targetTypeEl);
+    }
+  }
+
+  const endUserEl = document.getElementById('endUserCount');
+  const n = parseInt(String(endUserEl?.value || '').trim(), 10);
+  if (!endUserEl || !Number.isInteger(n) || n <= 500 || n > 10000000) {
+    if (endUserEl) errorEls.push(endUserEl);
+  }
+
+  const endRunDaysWrap = document.getElementById('endRunDaysWrap');
+  const endDaysEl = document.getElementById('endRunDays');
+  if (endRunDaysWrap && endRunDaysWrap.classList.contains('is-open') && endDaysEl) {
+    const raw = String(endDaysEl.value || '').trim();
+    if (raw !== '') {
+      const d = parseInt(raw, 10);
+      if (!Number.isInteger(d) || d < 1 || d > 365) {
+        errorEls.push(endDaysEl);
+      }
+    }
+  }
+
+  if (!restricted) {
+    const userScopeEl = document.getElementById('userScope');
+    if (userScopeEl && userScopeEl.value === 'targeted') {
+      const tagCount = document.querySelectorAll('#editExperimentForm #scopeTags .scope-tag').length;
+      if (tagCount === 0) {
+        const scopeRules = document.getElementById('scopeRules');
+        if (scopeRules) errorEls.push(scopeRules);
+      }
+    }
+  }
+
+  document.querySelectorAll('#editExperimentForm #trafficGroups .traffic-row').forEach(row => {
+    const nameEl = row.querySelector('input[type="text"]');
+    if (nameEl && !String(nameEl.value || '').trim()) {
+      errorEls.push(nameEl);
+    }
+    if (!restricted) {
+      const targetSel = row.querySelector('.target-select');
+      const targetCustom = row.querySelector('.target-custom-input');
+      if (targetSel) {
+        if (!targetSel.value) errorEls.push(targetSel);
+      } else if (targetCustom) {
+        if (!String(targetCustom.value || '').trim()) errorEls.push(targetCustom);
+      }
+    }
+  });
+
+  const numInputs = document.querySelectorAll('#editExperimentForm #trafficGroups input[type="number"]');
+  let sum = 0;
+  numInputs.forEach(inp => {
+    sum += parseInt(String(inp.value || '').trim(), 10) || 0;
+  });
+  if (sum !== 100) {
+    numInputs.forEach(inp => errorEls.push(inp));
+  }
+
+  const seen = new Set();
+  const unique = [];
+  errorEls.forEach(el => {
+    if (el && !seen.has(el)) {
+      seen.add(el);
+      unique.push(el);
+    }
+  });
+
+  if (unique.length === 0) return true;
+
+  unique.forEach(el => el.classList.add(CREATE_FIELD_ERROR));
+  const first = findFirstElInVisualOrder(unique);
+  if (first) {
+    placeFirstEditFormErrorMessage(first);
+    first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  return false;
+}
+
+function serializeEditFormGroups() {
+  const rows = document.querySelectorAll('#editExperimentForm #trafficGroups .traffic-row');
+  const arr = [];
+  rows.forEach(row => {
+    const nameInp = row.querySelector('input[type="text"]');
+    const trafficInp = row.querySelector('input[type="number"]');
+    const meaningInp = row.querySelector('.meaning-input');
+    const sel = row.querySelector('.target-select');
+    const cust = row.querySelector('.target-custom-input');
+    arr.push({
+      name: (nameInp && nameInp.value) ? nameInp.value.trim() : '',
+      traffic: trafficInp ? parseInt(trafficInp.value || '0', 10) || 0 : 0,
+      meaning: meaningInp ? meaningInp.value : '',
+      variable: sel ? sel.value : (cust ? cust.value : ''),
+      isControl: row.dataset.isControl === 'true'
+    });
+  });
+  return arr;
+}
+
+function applyEditSave(id) {
+  const exp = experiments.find(e => e.id === id);
+  if (!exp) return;
+  const form = document.getElementById('editExperimentForm');
+  const restricted = form && form.dataset.restricted === '1';
+  exp.name = (form.querySelector('[name="name"]')?.value || '').trim() || exp.name;
+  if (!restricted) {
+    exp.goal = form.querySelector('[name="goal"]')?.value || '';
+  }
+  const n = parseInt(String(document.getElementById('endUserCount')?.value || '').trim(), 10);
+  if (Number.isInteger(n) && n > 500 && n <= 10000000) exp.endUserStop = n;
+  const endWrap = document.getElementById('endRunDaysWrap');
+  if (endWrap && endWrap.classList.contains('is-open')) {
+    const raw = String(document.getElementById('endRunDays')?.value || '').trim();
+    exp.endRunDays = raw === '' ? null : parseInt(raw, 10);
+  } else {
+    exp.endRunDays = null;
+  }
+  if (!restricted) {
+    const tt = document.getElementById('targetType')?.value;
+    exp.target = tt === 'pricing' ? '定价' : tt === 'price_table' ? '价格表' : '自定义';
+    const us = document.getElementById('userScope')?.value;
+    exp.userScopeSaved = us === 'all' ? '全部' : '定向';
+    if (us === 'targeted' && typeof window.__editScopeList !== 'undefined' && window.__editScopeList) {
+      exp.userScopeRulesSaved = window.__editScopeList.map(s => ({ dimension: s.dimension, value: s.value }));
+    } else if (us === 'all') {
+      exp.userScopeRulesSaved = [];
+    }
+  }
+  exp.savedGroups = serializeEditFormGroups();
+  exp.updatedAt = formatNowStamp().slice(0, 16);
+  exp.updatedBy = 'zhangsan@example.com';
+}
+
+function captureEditFormSnapshot() {
+  const form = document.getElementById('editExperimentForm');
+  if (!form) return '';
+  const restricted = form.dataset.restricted === '1';
+  const endOpen = document.getElementById('endRunDaysWrap')?.classList.contains('is-open');
+  const parts = [
+    form.querySelector('[name="name"]')?.value || '',
+    form.querySelector('[name="goal"]')?.value || '',
+    document.getElementById('endUserCount')?.value || '',
+    endOpen ? (document.getElementById('endRunDays')?.value || '') : '__closed__'
+  ];
+  if (!restricted) {
+    parts.push(document.getElementById('targetType')?.value || '');
+    parts.push(document.getElementById('userScope')?.value || '');
+    parts.push(JSON.stringify(window.__editScopeList || []));
+  }
+  parts.push(JSON.stringify(serializeEditFormGroups()));
+  return parts.join('\x01');
+}
+
+function editFormHasContent() {
+  if (!document.getElementById('editExperimentForm')) return false;
+  if (typeof window.__editFormInitialSnapshot === 'undefined') return false;
+  return captureEditFormSnapshot() !== window.__editFormInitialSnapshot;
+}
 
 function createFormHasContent() {
   const name = document.querySelector('#createForm [name="name"]');
@@ -1106,6 +1528,207 @@ function bindCreateFormEvents() {
   });
 }
 
+function bindEditFormEvents(id) {
+  const form = document.getElementById('editExperimentForm');
+  if (!form) return;
+  const restricted = form.dataset.restricted === '1';
+  const detail = getExperimentDetail(id);
+  let scopeList = (detail.userScopeRules || []).map(r => ({ dimension: r.dimension, value: r.value }));
+  window.__editScopeList = scopeList;
+
+  function refreshScopeTagsForEdit() {
+    const el = document.getElementById('scopeTags');
+    if (!el || restricted) return;
+    el.innerHTML = scopeList.map((s, i) =>
+      `<span class="scope-tag">${s.dimension}: ${s.value} <span class="remove" data-i="${i}">×</span></span>`
+    ).join('');
+    el.querySelectorAll('.remove').forEach(elR => {
+      elR.onclick = () => {
+        scopeList.splice(+elR.dataset.i, 1);
+        window.__editScopeList = scopeList;
+        refreshScopeTagsForEdit();
+        clearEditFormErrors();
+      };
+    });
+  }
+  if (!restricted) {
+    refreshScopeTagsForEdit();
+  }
+
+  const targetType = document.getElementById('targetType');
+  const controlGroupHint = document.getElementById('controlGroupHint');
+  const customTargetHintWrap = document.getElementById('customTargetHintWrap');
+  function updateTargetColumn() {
+    const v = targetType?.value || '';
+    if (controlGroupHint) controlGroupHint.style.display = (v === 'pricing' || v === 'price_table') ? 'block' : 'none';
+    if (customTargetHintWrap) customTargetHintWrap.style.display = v === 'custom' ? 'block' : 'none';
+    const cells = document.querySelectorAll('#editExperimentForm #trafficGroups .target-cell');
+    if (v === 'custom') {
+      const defaultValues = ['value1', 'value2'];
+      cells.forEach((cell, i) => {
+        const input = cell.querySelector('.target-custom-input');
+        const prevVal = (input && input.value) ? input.value.replace(/"/g, '&quot;').replace(/</g, '&lt;') : '';
+        const defaultVal = defaultValues[i];
+        const valueAttr = prevVal || (defaultVal || '');
+        const placeholder = (prevVal || defaultVal) ? '' : '填写该分组对应的值';
+        cell.innerHTML = `<input type="text" class="target-custom-input" placeholder="${placeholder}"${valueAttr ? ` value="${valueAttr}"` : ''}>`;
+      });
+    } else {
+      const opts = v === 'pricing' ? PRICING_OPTIONS : v === 'price_table' ? buildPriceTableOptionsHtml() : '<option value="">请先选择实验对象</option>';
+      cells.forEach(cell => {
+        const sel = cell.querySelector('.target-select');
+        const prevVal = sel ? sel.value : '';
+        cell.innerHTML = `<select class="target-select">${opts}</select>`;
+        const newSel = cell.querySelector('.target-select');
+        if (newSel && prevVal) {
+          for (let i = 0; i < newSel.options.length; i++) {
+            const o = newSel.options[i];
+            if (o.value === prevVal && !o.disabled) {
+              newSel.selectedIndex = i;
+              break;
+            }
+          }
+        }
+      });
+    }
+  }
+  if (!restricted && targetType) {
+    targetType.addEventListener('change', updateTargetColumn);
+  }
+  const userScope = document.getElementById('userScope');
+  const scopeRules = document.getElementById('scopeRules');
+  if (!restricted && userScope && scopeRules) {
+    userScope.addEventListener('change', () => {
+      scopeRules.style.display = userScope.value === 'targeted' ? 'block' : 'none';
+    });
+  }
+  if (!restricted) {
+    document.getElementById('addScope')?.addEventListener('click', () => {
+      const dim = document.getElementById('scopeDim').value;
+      const val = document.getElementById('scopeValue').value;
+      if (!val.trim()) return;
+      scopeList.push({ dimension: dim, value: val });
+      window.__editScopeList = scopeList;
+      document.getElementById('scopeValue').value = '';
+      refreshScopeTagsForEdit();
+      clearEditFormErrors();
+    });
+  }
+
+  function updateTrafficTotal() {
+    const nums = document.querySelectorAll('#editExperimentForm #trafficGroups input[type="number"]');
+    let t = 0;
+    nums.forEach(n => { t += parseInt(n.value || 0, 10); });
+    const totalEl = document.getElementById('trafficTotal');
+    if (totalEl) totalEl.textContent = t;
+  }
+  function redistributeTrafficEqually() {
+    const container = document.getElementById('trafficGroups');
+    if (!container) return;
+    const inputs = container.querySelectorAll('input[type="number"]');
+    const count = inputs.length;
+    if (count === 0) return;
+    const base = Math.floor(100 / count);
+    const remainder = 100 % count;
+    inputs.forEach((input, i) => {
+      input.value = i < remainder ? base + 1 : base;
+    });
+    updateTrafficTotal();
+  }
+  document.querySelectorAll('#editExperimentForm #trafficGroups input[type="number"]').forEach(el => {
+    el.addEventListener('input', updateTrafficTotal);
+  });
+
+  function getExperimentRowCount() {
+    const container = document.getElementById('trafficGroups');
+    if (!container) return 0;
+    return container.querySelectorAll('.traffic-row:not([data-is-control="true"])').length;
+  }
+  function refreshRemoveGroupButtons() {
+    if (restricted) return;
+    const n = getExperimentRowCount();
+    document.querySelectorAll('#trafficGroups .traffic-row:not([data-is-control="true"]) .traffic-row-action').forEach(el => {
+      el.style.display = n > 1 ? 'inline-flex' : 'none';
+    });
+  }
+
+  if (!restricted) {
+    document.getElementById('addGroup')?.addEventListener('click', () => {
+      const container = document.getElementById('trafficGroups');
+      const count = container.querySelectorAll('.traffic-row').length;
+      if (count >= 6) return alert('最多 6 个组（1 对照组 + 5 实验组）');
+      const v = document.getElementById('targetType')?.value || '';
+      let middleHtml;
+      if (v === 'custom') {
+        middleHtml = '<div class="target-cell"><input type="text" class="target-custom-input" placeholder="填写该分组对应的值" /></div><div class="target-meaning-cell"><input type="text" class="meaning-input" placeholder="记录该分组的业务逻辑（选填）" /></div>';
+      } else {
+        const opts = v === 'pricing' ? PRICING_OPTIONS : v === 'price_table' ? buildPriceTableOptionsHtml() : '<option value="">请先选择实验对象</option>';
+        middleHtml = `<div class="target-cell"><select class="target-select">${opts}</select></div><div class="target-meaning-cell"><input type="text" class="meaning-input" placeholder="记录该分组的业务逻辑（选填）" /></div>`;
+      }
+      const row = document.createElement('div');
+      row.className = 'traffic-row';
+      row.innerHTML = `<input type="text" placeholder="实验分组名称" />${middleHtml}<input type="number" min="0" max="100" value="0" placeholder="流量%" /><span class="traffic-row-action"><button type="button" class="btn btn-ghost btn-sm btn-remove-group" title="删除该实验组" aria-label="删除该实验组">${TRASH_ICON_SVG}</button></span>`;
+      container.appendChild(row);
+      row.querySelector('input[type="number"]').addEventListener('input', updateTrafficTotal);
+      redistributeTrafficEqually();
+      refreshRemoveGroupButtons();
+    });
+    document.getElementById('trafficGroups')?.addEventListener('click', (e) => {
+      const btn = e.target.closest('.btn-remove-group');
+      if (!btn || btn.disabled) return;
+      const row = btn.closest('.traffic-row');
+      if (!row || row.dataset.isControl === 'true') return;
+      if (getExperimentRowCount() <= 1) return;
+      row.remove();
+      redistributeTrafficEqually();
+      updateTrafficTotal();
+      refreshRemoveGroupButtons();
+    });
+  }
+  refreshRemoveGroupButtons();
+
+  const endUserEl = document.getElementById('endUserCount');
+  const endDaysEl = document.getElementById('endRunDays');
+  const endRunDaysWrap = document.getElementById('endRunDaysWrap');
+  const addMaxRunBtn = document.getElementById('addMaxRunDurationBtn');
+  const removeMaxRunBtn = document.getElementById('removeMaxRunDurationBtn');
+  if (endUserEl) endUserEl.dataset.initial = endUserEl.value;
+  function expandEndRunDays() {
+    if (!endRunDaysWrap || !endDaysEl || !addMaxRunBtn) return;
+    endRunDaysWrap.classList.add('is-open');
+    endRunDaysWrap.setAttribute('aria-hidden', 'false');
+    addMaxRunBtn.hidden = true;
+    if (endDaysEl.dataset.initial === undefined) endDaysEl.dataset.initial = endDaysEl.value;
+  }
+  function collapseEndRunDays() {
+    if (!endRunDaysWrap || !endDaysEl || !addMaxRunBtn) return;
+    endRunDaysWrap.classList.remove('is-open');
+    endRunDaysWrap.setAttribute('aria-hidden', 'true');
+    addMaxRunBtn.hidden = false;
+    endDaysEl.value = '30';
+    delete endDaysEl.dataset.initial;
+  }
+  addMaxRunBtn?.addEventListener('click', expandEndRunDays);
+  removeMaxRunBtn?.addEventListener('click', collapseEndRunDays);
+
+  form.addEventListener('input', () => clearEditFormErrors());
+  form.addEventListener('change', () => clearEditFormErrors());
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!validateEditForm(restricted)) return;
+    applyEditSave(id);
+    location.hash = '#/experiments/' + id;
+  });
+  document.getElementById('editPageBackBtn')?.addEventListener('click', () => {
+    if (editFormHasContent()) {
+      showConfirmExitModal(() => { location.hash = '#/experiments/' + id; });
+    } else {
+      location.hash = '#/experiments/' + id;
+    }
+  });
+  window.__editFormInitialSnapshot = captureEditFormSnapshot();
+}
+
 function renderExperimentDetail(id, tab) {
   const detail = getExperimentDetail(id);
   const data = getExperimentData(id);
@@ -1179,7 +1802,7 @@ function renderDetailTab(detail) {
   const searchLower = detailUserSearch.trim().toLowerCase();
   const filtered = searchLower
     ? allAssignments.filter(u => {
-      const fields = [u.uid, u.vid, u.merchantCustomerId, u.ip].filter(Boolean).map(s => String(s).toLowerCase());
+      const fields = [u.uid, u.clientId, u.merchantCustomerId, u.ip].filter(Boolean).map(s => String(s).toLowerCase());
       return fields.some(f => f.includes(searchLower));
     })
     : allAssignments;
@@ -1190,7 +1813,7 @@ function renderDetailTab(detail) {
   const pageData = filtered.slice(start, start + DETAIL_USER_PAGE_SIZE);
   const tableRows = pageData.map(u => `
     <tr>
-      <td>${u.vid || '-'}</td>
+      <td>${u.clientId || '-'}</td>
       <td>${u.uid || '-'}</td>
       <td>${u.merchantCustomerId || '-'}</td>
       <td>${u.ip || '-'}</td>
@@ -1233,13 +1856,13 @@ function renderDetailTab(detail) {
       <div class="detail-section-header">
         <label class="form-label" style="margin-bottom:0;">用户实验分组数据</label>
         <div class="detail-search-wrap">
-          <input type="text" id="detailUserSearchInput" class="detail-search-input" placeholder="搜索设备 ID / 客户 ID / 商户端客户 ID / IP" value="${(detailUserSearch || '').replace(/"/g, '&quot;')}" />
+          <input type="text" id="detailUserSearchInput" class="detail-search-input" placeholder="搜索 client id / 客户 ID / 商户端客户 ID / IP" value="${(detailUserSearch || '').replace(/"/g, '&quot;')}" />
         </div>
       </div>
-      <p class="form-hint">展示参与实验用户的设备与客户标识；支持通过下拉框手动修改某用户的实验分组；支持按设备 ID、客户 ID、商户端客户 ID、IP 搜索。</p>
+      <p class="form-hint">展示参与实验用户的 client id 与客户标识；支持通过下拉框手动修改某用户的实验分组；支持按 client id、客户 ID、商户端客户 ID、IP 搜索。</p>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>设备 ID</th><th>客户 ID</th><th>商户端客户 ID</th><th>IP 地址</th><th>用户分组</th><th>分组时间</th></tr></thead>
+          <thead><tr><th>client id</th><th>客户 ID</th><th>商户端客户 ID</th><th>IP 地址</th><th>用户分组</th><th>分组时间</th></tr></thead>
           <tbody>${tableRows}</tbody>
         </table>
       </div>
@@ -1343,7 +1966,18 @@ function renderDataTab(data) {
   return `
     <div class="data-summary">
       <div class="data-summary-item"><div class="label">实验时长</div><div class="value">${data.duration}</div></div>
-      <div class="data-summary-item"><div class="label">参与用户数</div><div class="value">${data.participantCount}</div></div>
+      <div class="data-summary-item">
+        <div class="label data-summary-inline-hint-label">
+          <span>参与用户数</span>
+          <span class="revenue-hint-wrap participant-count-stat-hint" tabindex="0" aria-label="关于参与用户数统计口径">
+            <span class="revenue-hint-icon" aria-hidden="true">?</span>
+            <span class="revenue-hint-popover" role="tooltip">
+              <p class="revenue-hint-popover-body">实验用户数基于设备标识（Cookie）统计，与【数据】模块中“用户数”的统计口径不同，数值可能存在差异。该差异不影响实验数据的真实性与准确性。</p>
+            </span>
+          </span>
+        </div>
+        <div class="value">${data.participantCount}</div>
+      </div>
     </div>
     <h3 class="data-module-title">转化数据</h3>
     <div class="data-table-card">
@@ -1434,7 +2068,7 @@ function bindDetailEvents(id, tab) {
     showExperimentActionModal('end', doEnd);
   });
   document.querySelector('[data-action="edit"]')?.addEventListener('click', () => {
-    alert('原型：编辑配置入口。正式开发时此处打开编辑表单（与创建实验字段一致，可修改实验名称、目标、对象、实验结束配置、用户范围、分组与流量等）。');
+    location.hash = '#/experiments/' + id + '/edit';
   });
   document.querySelectorAll('.select-group').forEach(sel => {
     sel.addEventListener('change', () => {

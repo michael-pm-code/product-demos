@@ -195,6 +195,25 @@ input[type="text"], input[type="number"], select, textarea {
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,70,229,.15); }
 textarea { min-height: 80px; resize: vertical; }
 
+/* 编辑实验：运行中/已暂停只读控件 */
+select.is-readonly-select,
+select.is-readonly-select:focus {
+  background-color: var(--bg-muted, #f4f4f5);
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 0.92;
+}
+textarea.is-readonly-textarea {
+  background-color: var(--bg-muted, #f4f4f5);
+  color: var(--text-muted);
+  cursor: not-allowed;
+  resize: none;
+}
+.add-group-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 /* 创建实验：校验未通过 */
 input.field-has-error,
 select.field-has-error,
@@ -350,6 +369,16 @@ th { font-weight: 500; color: var(--text-muted); background: #f8fafc; }
 .data-summary { display: flex; gap: 24px; margin-bottom: 24px; flex-wrap: wrap; }
 .data-summary-item { background: var(--card-bg); padding: 16px 20px; border-radius: var(--radius); min-width: 160px; }
 .data-summary-item .label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+.data-summary-inline-hint-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.data-summary-item .participant-count-stat-hint .revenue-hint-popover {
+  width: min(380px, calc(100vw - 48px));
+}
 .data-summary-item .value { font-size: 1.25rem; font-weight: 600; }
 .data-table-card { overflow-x: auto; }
 .data-table th, .data-table td { padding: 14px 16px; }
