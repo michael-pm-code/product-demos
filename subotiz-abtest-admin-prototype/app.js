@@ -1017,6 +1017,129 @@ function escapeHtmlAttr(s) {
   return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 }
 
+function getIso3166Countries() {
+  return Array.isArray(window.__ISO3166_COUNTRIES_ZH) ? window.__ISO3166_COUNTRIES_ZH : [];
+}
+
+/** 从已保存的定向规则中取出「国家」维度的展示串（多条合并为顿号） */
+function getCountryValueFromScopeList(list) {
+  const items = (list || []).filter(s => s.dimension === '国家');
+  if (items.length === 0) return '';
+  return items.map(s => s.value).join('、');
+}
+
+function getPresetForScopeMount(dim, scopeList) {
+  if (dim === '国家') return { countryValue: getCountryValueFromScopeList(scopeList) };
+  return {};
+}
+
+function parseCountrySelectionToCodes(existingValueStr) {
+  const countries = getIso3166Countries();
+  const parts = String(existingValueStr || '').split(/[,，、]/).map(s => s.trim()).filter(Boolean);
+  const selectedCodes = new Set();
+  parts.forEach(p => {
+    const up = p.toUpperCase();
+    const byCode = countries.find(c => c.code === up);
+    if (byCode) {
+      selectedCodes.add(byCode.code);
+      return;
+    }
+    const byName = countries.find(c => c.name === p);
+    if (byName) selectedCodes.add(byName.code);
+  });
+  return selectedCodes;
+}
+
+/** 默认收起（details），多选为复选框；勾选变化由外层事件同步到标签 */
+function buildCountryPickerHtml(existingValueStr) {
+  const countries = getIso3166Countries();
+  const selectedCodes = parseCountrySelectionToCodes(existingValueStr);
+  const rows = countries.map(({ code, name }) => {
+    const checked = selectedCodes.has(code) ? ' checked' : '';
+    const searchKey = `${name} ${code}`.toLowerCase();
+    return `<label class="scope-country-row" data-search="${escapeHtmlAttr(searchKey)}"><input type="checkbox" class="scope-country-cb" value="${escapeHtmlAttr(code)}"${checked} />${escapeHtmlText(name)}（${escapeHtmlAttr(code)}）</label>`;
+  }).join('');
+  return (
+    '<div class="scope-country-picker">' +
+    '<details class="scope-country-details">' +
+    '<summary class="scope-country-summary">选择国家/地区（多选）</summary>' +
+    '<div class="scope-country-panel">' +
+    '<input type="search" class="scope-country-filter" placeholder="搜索国家或代码…" autocomplete="off" />' +
+    `<div class="scope-country-checkboxes">${rows}</div>` +
+    '</div></details></div>'
+  );
+}
+
+function buildScopeValueHostHtml(dim, preset) {
+  const d = dim || '国家';
+  const p = preset || {};
+  if (d === '国家') {
+    return buildCountryPickerHtml(p.countryValue != null ? p.countryValue : '');
+  }
+  if (d === '来源渠道') {
+    const v = p.channelValue != null ? p.channelValue : '';
+    return `<input type="text" id="scopeValueChannel" class="scope-value-channel" placeholder="填写来源渠道，如 organic" value="${escapeHtmlAttr(v)}" />`;
+  }
+  if (d === '设备') {
+    const val = p.deviceValue != null ? p.deviceValue : '';
+    return `<select id="scopeValueDevice" class="scope-value-device">
+      <option value="">请选择</option>
+      <option value="全部"${val === '全部' ? ' selected' : ''}>全部</option>
+      <option value="PC"${val === 'PC' ? ' selected' : ''}>PC</option>
+      <option value="移动端"${val === '移动端' ? ' selected' : ''}>移动端</option>
+    </select>`;
+  }
+  return '';
+}
+
+function mountScopeValueHost(dim, preset) {
+  const host = document.getElementById('scopeValueHost');
+  if (!host) return;
+  host.innerHTML = buildScopeValueHostHtml(dim, preset);
+  const addBtn = document.getElementById('addScope');
+  if (addBtn) addBtn.hidden = dim === '国家';
+}
+
+function readCountryScopeValueFromHost(hostEl) {
+  const host = hostEl || document.getElementById('scopeValueHost');
+  if (!host) return '';
+  const countries = getIso3166Countries();
+  const names = Array.from(host.querySelectorAll('.scope-country-cb:checked')).map(cb => {
+    const code = cb.value;
+    const c = countries.find(x => x.code === code);
+    return c ? c.name : code;
+  });
+  return names.join('、');
+}
+
+function readScopeValueFromHost(dim) {
+  const d = dim || document.getElementById('scopeDim')?.value || '国家';
+  if (d === '国家') {
+    return readCountryScopeValueFromHost();
+  }
+  if (d === '来源渠道') {
+    return document.getElementById('scopeValueChannel')?.value.trim() || '';
+  }
+  if (d === '设备') {
+    return document.getElementById('scopeValueDevice')?.value.trim() || '';
+  }
+  return '';
+}
+
+function clearScopeValueHost(dim) {
+  const d = dim || document.getElementById('scopeDim')?.value;
+  if (d === '国家') {
+    const host = document.getElementById('scopeValueHost');
+    if (host) host.querySelectorAll('.scope-country-cb').forEach(cb => { cb.checked = false; });
+  } else if (d === '来源渠道') {
+    const inp = document.getElementById('scopeValueChannel');
+    if (inp) inp.value = '';
+  } else if (d === '设备') {
+    const s = document.getElementById('scopeValueDevice');
+    if (s) s.selectedIndex = 0;
+  }
+}
+
 /** 创建实验：在「月度 / 年度」两个可选项基础上增加 1 个置灰项，演示「已被其他实验占用」（原型 Mock） */
 const PRICE_TABLE_DISABLED_OPTION_DEMO = {
   value: '/pricing/demo-occupied',
@@ -1468,7 +1591,7 @@ function renderCreateExperiment() {
                   <option value="来源渠道">来源渠道</option>
                   <option value="设备">设备</option>
                 </select>
-                <input type="text" id="scopeValue" placeholder="如：美国、英国" />
+                <div id="scopeValueHost" class="scope-value-host"></div>
                 <button type="button" class="btn btn-secondary btn-sm" id="addScope">添加</button>
               </div>
             </div>
@@ -1589,7 +1712,7 @@ function renderEditExperiment(id) {
          <div class="scope-tags" id="scopeTags">${scopeTagsDraft}</div>
          <div class="add-scope-row">
            <select id="scopeDim"><option value="国家">国家</option><option value="来源渠道">来源渠道</option><option value="设备">设备</option></select>
-           <input type="text" id="scopeValue" placeholder="如：美国、英国" />
+           <div id="scopeValueHost" class="scope-value-host"></div>
            <button type="button" class="btn btn-secondary btn-sm" id="addScope">添加</button>
          </div>
        </div>`;
@@ -2262,28 +2385,80 @@ function bindCreateFormEvents() {
   }
   const userScope = document.getElementById('userScope');
   const scopeRules = document.getElementById('scopeRules');
-  if (userScope) {
-    userScope.addEventListener('change', () => {
-      scopeRules.style.display = userScope.value === 'targeted' ? 'block' : 'none';
-    });
-  }
   let scopeList = [];
-  document.getElementById('addScope')?.addEventListener('click', () => {
-    const dim = document.getElementById('scopeDim').value;
-    const val = document.getElementById('scopeValue').value;
-    if (!val.trim()) return;
-    scopeList.push({ dimension: dim, value: val });
-    document.getElementById('scopeTags').innerHTML = scopeList.map((s, i) =>
+  function renderCreateScopeTags() {
+    const el = document.getElementById('scopeTags');
+    if (!el) return;
+    el.innerHTML = scopeList.map((s, i) =>
       `<span class="scope-tag">${s.dimension}: ${s.value} <span class="remove" data-i="${i}">×</span></span>`
     ).join('');
-    document.getElementById('scopeValue').value = '';
-    document.getElementById('scopeTags').querySelectorAll('.remove').forEach(el => {
-      el.onclick = () => {
-        scopeList.splice(+el.dataset.i, 1);
+    el.querySelectorAll('.remove').forEach(elR => {
+      elR.onclick = () => {
+        scopeList.splice(+elR.dataset.i, 1);
         clearCreateFormErrors();
-        bindCreateFormEvents();
+        renderCreateScopeTags();
+        if (document.getElementById('scopeDim')?.value === '国家') {
+          mountScopeValueHost('国家', getPresetForScopeMount('国家', scopeList));
+        }
       };
     });
+  }
+  if (userScope) {
+    userScope.addEventListener('change', () => {
+      const show = userScope.value === 'targeted';
+      scopeRules.style.display = show ? 'block' : 'none';
+      if (show) {
+        const d = document.getElementById('scopeDim')?.value || '国家';
+        mountScopeValueHost(d, getPresetForScopeMount(d, scopeList));
+      }
+    });
+  }
+  if (scopeRules) {
+    scopeRules.addEventListener('change', (e) => {
+      const t = e.target;
+      if (!t.classList?.contains('scope-country-cb')) return;
+      if (document.getElementById('scopeDim')?.value !== '国家') return;
+      const form = document.getElementById('createForm');
+      if (!form || !form.contains(t)) return;
+      const host = document.getElementById('scopeValueHost');
+      if (!host || !host.contains(t)) return;
+      const val = readCountryScopeValueFromHost(host);
+      scopeList = scopeList.filter(s => s.dimension !== '国家');
+      if (val) scopeList.push({ dimension: '国家', value: val });
+      renderCreateScopeTags();
+      clearCreateFormErrors();
+    });
+    scopeRules.addEventListener('input', (e) => {
+      const inp = e.target;
+      if (!inp.classList?.contains('scope-country-filter')) return;
+      const form = document.getElementById('createForm');
+      if (!form || !form.contains(inp)) return;
+      const host = document.getElementById('scopeValueHost');
+      if (!host || !host.contains(inp)) return;
+      const q = inp.value.trim().toLowerCase();
+      host.querySelectorAll('.scope-country-row').forEach(row => {
+        const hay = (row.getAttribute('data-search') || '').toLowerCase();
+        row.style.display = !q || hay.includes(q) ? '' : 'none';
+      });
+    });
+  }
+  document.getElementById('scopeDim')?.addEventListener('change', () => {
+    const d = document.getElementById('scopeDim').value;
+    mountScopeValueHost(d, getPresetForScopeMount(d, scopeList));
+  });
+  {
+    const d0 = document.getElementById('scopeDim')?.value || '国家';
+    mountScopeValueHost(d0, getPresetForScopeMount(d0, scopeList));
+  }
+  document.getElementById('addScope')?.addEventListener('click', () => {
+    const dim = document.getElementById('scopeDim').value;
+    if (dim === '国家') return;
+    const val = readScopeValueFromHost(dim);
+    if (!String(val).trim()) return;
+    scopeList.push({ dimension: dim, value: val });
+    renderCreateScopeTags();
+    clearScopeValueHost(dim);
+    mountScopeValueHost(dim, getPresetForScopeMount(dim, scopeList));
     clearCreateFormErrors();
   });
   function updateTrafficTotal() {
@@ -2419,12 +2594,47 @@ function bindEditFormEvents(id) {
         scopeList.splice(+elR.dataset.i, 1);
         window.__editScopeList = scopeList;
         refreshScopeTagsForEdit();
+        if (document.getElementById('scopeDim')?.value === '国家') {
+          mountScopeValueHost('国家', getPresetForScopeMount('国家', scopeList));
+        }
         clearEditFormErrors();
       };
     });
   }
   if (!restricted) {
     refreshScopeTagsForEdit();
+  }
+
+  const scopeRulesEl = document.getElementById('scopeRules');
+  if (!restricted && scopeRulesEl) {
+    scopeRulesEl.addEventListener('change', (e) => {
+      const t = e.target;
+      if (!t.classList?.contains('scope-country-cb')) return;
+      if (document.getElementById('scopeDim')?.value !== '国家') return;
+      const form = document.getElementById('editExperimentForm');
+      if (!form || !form.contains(t)) return;
+      const host = document.getElementById('scopeValueHost');
+      if (!host || !host.contains(t)) return;
+      const val = readCountryScopeValueFromHost(host);
+      scopeList = scopeList.filter(s => s.dimension !== '国家');
+      if (val) scopeList.push({ dimension: '国家', value: val });
+      window.__editScopeList = scopeList;
+      refreshScopeTagsForEdit();
+      clearEditFormErrors();
+    });
+    scopeRulesEl.addEventListener('input', (e) => {
+      const inp = e.target;
+      if (!inp.classList?.contains('scope-country-filter')) return;
+      const form = document.getElementById('editExperimentForm');
+      if (!form || !form.contains(inp)) return;
+      const host = document.getElementById('scopeValueHost');
+      if (!host || !host.contains(inp)) return;
+      const q = inp.value.trim().toLowerCase();
+      host.querySelectorAll('.scope-country-row').forEach(row => {
+        const hay = (row.getAttribute('data-search') || '').toLowerCase();
+        row.style.display = !q || hay.includes(q) ? '' : 'none';
+      });
+    });
   }
 
   const targetType = document.getElementById('targetType');
@@ -2488,17 +2698,32 @@ function bindEditFormEvents(id) {
   const scopeRules = document.getElementById('scopeRules');
   if (!restricted && userScope && scopeRules) {
     userScope.addEventListener('change', () => {
-      scopeRules.style.display = userScope.value === 'targeted' ? 'block' : 'none';
+      const show = userScope.value === 'targeted';
+      scopeRules.style.display = show ? 'block' : 'none';
+      if (show) {
+        const d = document.getElementById('scopeDim')?.value || '国家';
+        mountScopeValueHost(d, getPresetForScopeMount(d, scopeList));
+      }
     });
   }
   if (!restricted) {
+    document.getElementById('scopeDim')?.addEventListener('change', () => {
+      const d = document.getElementById('scopeDim').value;
+      mountScopeValueHost(d, getPresetForScopeMount(d, scopeList));
+    });
+    {
+      const d0 = document.getElementById('scopeDim')?.value || '国家';
+      mountScopeValueHost(d0, getPresetForScopeMount(d0, scopeList));
+    }
     document.getElementById('addScope')?.addEventListener('click', () => {
       const dim = document.getElementById('scopeDim').value;
-      const val = document.getElementById('scopeValue').value;
-      if (!val.trim()) return;
+      if (dim === '国家') return;
+      const val = readScopeValueFromHost(dim);
+      if (!String(val).trim()) return;
       scopeList.push({ dimension: dim, value: val });
       window.__editScopeList = scopeList;
-      document.getElementById('scopeValue').value = '';
+      clearScopeValueHost(dim);
+      mountScopeValueHost(dim, getPresetForScopeMount(dim, scopeList));
       refreshScopeTagsForEdit();
       clearEditFormErrors();
     });

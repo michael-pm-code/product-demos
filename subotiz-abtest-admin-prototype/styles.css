@@ -277,8 +277,68 @@ textarea.field-has-error:focus {
 .scope-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .scope-tag { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: #edf2f7; border-radius: 6px; font-size: 13px; }
 .scope-tag .remove { cursor: pointer; color: var(--text-muted); }
-.add-scope-row { display: flex; gap: 8px; margin-top: 8px; }
-.add-scope-row select, .add-scope-row input { flex: 1; }
+.add-scope-row { display: flex; gap: 8px; margin-top: 8px; align-items: flex-start; flex-wrap: wrap; }
+.add-scope-row > select#scopeDim { flex: 0 0 auto; min-width: 120px; }
+.add-scope-row > .btn { flex-shrink: 0; align-self: flex-start; margin-top: 2px; }
+.scope-value-host { flex: 1; min-width: 200px; }
+.scope-country-picker { width: 100%; }
+.scope-country-details {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.scope-country-details summary.scope-country-summary {
+  padding: 10px 12px;
+  cursor: pointer;
+  font-size: 14px;
+  list-style: none;
+}
+.scope-country-details summary.scope-country-summary::-webkit-details-marker { display: none; }
+.scope-country-details[open] summary.scope-country-summary {
+  border-bottom: 1px solid var(--border);
+}
+.scope-country-panel {
+  padding: 8px 10px 10px;
+}
+.scope-country-filter {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  font-size: 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.scope-country-checkboxes {
+  max-height: 220px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+.scope-country-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 2px;
+  cursor: pointer;
+}
+.scope-country-row .scope-country-cb {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.scope-value-host .scope-value-channel,
+.scope-value-host .scope-value-device {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  font-size: 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
 
 /* Tabs */
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
