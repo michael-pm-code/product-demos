@@ -3021,10 +3021,10 @@ function renderDetailTab(detail) {
       <div class="detail-section-header">
         <label class="form-label" style="margin-bottom:0;">用户实验分组数据</label>
         <div class="detail-search-wrap">
-          <input type="text" id="detailUserSearchInput" class="detail-search-input" placeholder="输入关键词，按回车或点击框外执行筛选" value="${(detailUserSearch || '').replace(/"/g, '&quot;')}" />
+          <input type="text" id="detailUserSearchInput" class="detail-search-input" placeholder="可搜 experiment uid / customer id / payer id / IP，回车或失焦筛选" value="${(detailUserSearch || '').replace(/"/g, '&quot;')}" />
         </div>
       </div>
-      <p class="form-hint">展示参与实验用户的 experiment uid、customer id、payer id（后两者可有多值，多值时默认展示一项，可在下拉中切换；搜索命中某值时默认选中该值）。筛选在按回车或输入框失焦后生效，避免每输入一字即刷新列表。支持通过下拉框手动修改某用户的实验分组。</p>
+      <p class="form-hint">展示参与实验用户的 experiment uid、customer id、payer id、IP 地址（customer id、payer id 可有多值，多值时默认展示一项，可在下拉中切换；搜索命中某值时默认选中该值）。筛选可对 experiment uid、customer id、payer id、IP 地址做模糊匹配（不区分大小写），在按回车或输入框失焦后生效。支持通过下拉框手动修改某用户的实验分组。</p>
       <div class="table-wrap">
         <table>
           <thead><tr><th>experiment uid</th><th>customer id</th><th>payer id</th><th>IP 地址</th><th>用户分组</th><th>分组时间</th></tr></thead>
