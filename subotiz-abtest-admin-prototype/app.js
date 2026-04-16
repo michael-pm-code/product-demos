@@ -169,22 +169,22 @@ const getExperimentDetail = (id) => {
       const base = ['abc', 'def', 'ghi', 'jkl', 'mno'][(i - 1) % 5] + n;
       const experimentUid = 'expuid_' + base;
       let customerIds = ['cust_' + n];
-      let merchantUids = ['muid_' + n + '_' + (1000 + i)];
+      let payerIds = ['payer_' + n + '_' + (1000 + i)];
       if (i % 4 === 0) {
         customerIds = ['cust_' + n, 'cust_legacy_' + n, 'cust_merge_' + n];
       }
       if (i % 5 === 0) {
-        merchantUids = ['muid_' + n + '_' + (1000 + i), 'muid_shop2_' + n];
+        payerIds = ['payer_' + n + '_' + (1000 + i), 'payer_shop2_' + n];
       }
       if (i === 7) {
         customerIds = ['cust_007', 'cust_backup_007', 'cust_staging_007'];
-        merchantUids = ['muid_007', 'muid_alt_007'];
+        payerIds = ['payer_007', 'payer_alt_007'];
       }
       list.push({
         rowKey: 'usr_' + n,
         experimentUid,
         customerIds,
-        merchantUids,
+        payerIds,
         ip: '203.0.113.' + String((i % 200) + 1),
         group: groups[(i - 1) % 3],
         assignedAt: '2025-03-10 14:' + String(30 + (i % 30)).padStart(2, '0')
@@ -392,7 +392,7 @@ function pickMultiValueDisplayIndex(values, searchLower) {
   return i >= 0 ? i : 0;
 }
 
-/** customer id / merchant uid 多值：单值纯文本，多值用下拉；搜索命中时默认选中匹配项 */
+/** customer id / payer id 多值：单值纯文本，多值用下拉；搜索命中时默认选中匹配项 */
 function htmlDetailMultiValueCell(values, searchLower, dataMultiKind) {
   const arr = Array.isArray(values) ? values.filter(v => v != null && String(v).trim() !== '') : (values != null && String(values).trim() !== '' ? [values] : []);
   if (arr.length === 0) return '<td>—</td>';
@@ -412,7 +412,7 @@ function userAssignmentMatchesSearch(u, searchLower) {
   const parts = [];
   if (u.experimentUid) parts.push(String(u.experimentUid));
   (u.customerIds || []).forEach(x => parts.push(String(x)));
-  (u.merchantUids || []).forEach(x => parts.push(String(x)));
+  (u.payerIds || []).forEach(x => parts.push(String(x)));
   if (u.ip) parts.push(String(u.ip));
   return parts.some(p => p.toLowerCase().includes(sl));
 }
@@ -2980,7 +2980,7 @@ function renderDetailTab(detail) {
     <tr>
       <td>${escapeHtmlText(u.experimentUid != null && u.experimentUid !== '' ? String(u.experimentUid) : '—')}</td>
       ${htmlDetailMultiValueCell(u.customerIds, detailUserSearch, 'customer')}
-      ${htmlDetailMultiValueCell(u.merchantUids, detailUserSearch, 'merchant')}
+      ${htmlDetailMultiValueCell(u.payerIds, detailUserSearch, 'payer')}
       <td>${escapeHtmlText(u.ip || '—')}</td>
       <td>
         <select class="select-group" data-row-key="${escapeHtmlAttr(u.rowKey || '')}">
@@ -3024,10 +3024,10 @@ function renderDetailTab(detail) {
           <input type="text" id="detailUserSearchInput" class="detail-search-input" placeholder="输入关键词，按回车或点击框外执行筛选" value="${(detailUserSearch || '').replace(/"/g, '&quot;')}" />
         </div>
       </div>
-      <p class="form-hint">展示参与实验用户的 experiment uid、customer id、merchant uid（后两者可有多值，多值时默认展示一项，可在下拉中切换；搜索命中某值时默认选中该值）。筛选在按回车或输入框失焦后生效，避免每输入一字即刷新列表。支持通过下拉框手动修改某用户的实验分组。</p>
+      <p class="form-hint">展示参与实验用户的 experiment uid、customer id、payer id（后两者可有多值，多值时默认展示一项，可在下拉中切换；搜索命中某值时默认选中该值）。筛选在按回车或输入框失焦后生效，避免每输入一字即刷新列表。支持通过下拉框手动修改某用户的实验分组。</p>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>experiment uid</th><th>customer id</th><th>merchant uid</th><th>IP 地址</th><th>用户分组</th><th>分组时间</th></tr></thead>
+          <thead><tr><th>experiment uid</th><th>customer id</th><th>payer id</th><th>IP 地址</th><th>用户分组</th><th>分组时间</th></tr></thead>
           <tbody>${tableRows}</tbody>
         </table>
       </div>
